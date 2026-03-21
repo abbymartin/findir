@@ -20,7 +20,11 @@ def handle_request(req: dict, db_conn) -> dict:
         scored = []
         for emb_id, file_id, chunk_text, vec in all_embeddings:
             score = embeddings.compute_similarity(query_vec, vec)
-            scored.append({"file_id": file_id, "chunk_text": chunk_text, "score": score})
+            row = db_conn.execute(
+                "SELECT path FROM indexed_files WHERE id = ?", (file_id,)
+            ).fetchone()
+            file_path = row[0] if row else "unknown"
+            scored.append({"file_path": file_path, "chunk_text": chunk_text, "score": score})
 
         scored.sort(key=lambda x: x["score"], reverse=True)
         return {"results": scored[:top_k]}
@@ -48,6 +52,10 @@ def main():
     # Signal ready
     sys.stdout.write(json.dumps({"status": "ready"}) + "\n")
     sys.stdout.flush()
+
+    # Preload embedding model in background
+    import threading
+    threading.Thread(target=lambda: __import__('embeddings').get_model(), daemon=True).start()
 
     for line in sys.stdin:
         line = line.strip()
