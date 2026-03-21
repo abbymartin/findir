@@ -8,15 +8,20 @@ import (
 
 	"semantic-files/internal/bridge"
 	"semantic-files/internal/db"
+	"semantic-files/internal/parsers"
 )
 
 type Indexer struct {
-	DB     *db.DB
-	Bridge *bridge.PythonBridge
+	DB       *db.DB
+	Bridge   *bridge.PythonBridge
+	registry *parsers.Registry
 }
 
 func New(database *db.DB, b *bridge.PythonBridge) *Indexer {
-	return &Indexer{DB: database, Bridge: b}
+	registry := parsers.NewRegistry(
+		&parsers.PlaintextParser{},
+	)
+	return &Indexer{DB: database, Bridge: b, registry: registry}
 }
 
 func (idx *Indexer) AddAndIndex(dirPath string) error {
@@ -54,10 +59,17 @@ func (idx *Indexer) ScanDirectory(dirPath string, dirID int64) error {
 		if err != nil {
 			return nil // skip files we can't access
 		}
+
 		if info.IsDir() {
-			return nil
+			if path == dirPath {
+				return nil // skip self to avoid infinite loop
+			}
+			// recursively add files from subfolders
+			return idx.AddAndIndex(path)
 		}
-		if !isSupportedFile(path) {
+
+		ext := strings.ToLower(filepath.Ext(path))
+		if idx.registry.Get(ext) == nil {
 			return nil
 		}
 
@@ -74,17 +86,16 @@ func (idx *Indexer) ScanDirectory(dirPath string, dirID int64) error {
 }
 
 func (idx *Indexer) indexFile(path string, dirID int64, info os.FileInfo) error {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("reading %s: %w", path, err)
-	}
-
-	text := string(content)
-	if strings.TrimSpace(text) == "" {
+	ext := strings.ToLower(filepath.Ext(path))
+	parser := idx.registry.Get(ext)
+	if parser == nil {
 		return nil
 	}
 
-	chunks := chunkText(text, 500)
+	chunks, err := parser.Parse(path)
+	if err != nil {
+		return fmt.Errorf("parsing %s: %w", path, err)
+	}
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -111,6 +122,7 @@ func (idx *Indexer) indexFile(path string, dirID int64, info os.FileInfo) error 
 	return nil
 }
 
+// todo rework this entirely!
 func (idx *Indexer) IndexNewFiles() error {
 	dirs, err := idx.DB.GetTrackedDirectories()
 	if err != nil {
@@ -123,37 +135,4 @@ func (idx *Indexer) IndexNewFiles() error {
 		}
 	}
 	return nil
-}
-
-func isSupportedFile(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	return ext == ".txt"
-}
-
-func chunkText(text string, maxChars int) []string {
-	paragraphs := strings.Split(text, "\n\n")
-	var chunks []string
-	var current string
-
-	for _, para := range paragraphs {
-		para = strings.TrimSpace(para)
-		if para == "" {
-			continue
-		}
-
-		if current != "" && len(current)+len(para)+1 > maxChars {
-			chunks = append(chunks, current)
-			current = para
-		} else if current == "" {
-			current = para
-		} else {
-			current = current + " " + para
-		}
-	}
-
-	if current != "" {
-		chunks = append(chunks, current)
-	}
-
-	return chunks
 }

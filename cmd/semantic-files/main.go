@@ -53,10 +53,10 @@ func main() {
 		return
 	}
 
-	// Index any new files in tracked directories
-	if err := idx.IndexNewFiles(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: error indexing new files: %v\n", err)
-	}
+	// // Index any new files in tracked directories
+	// if err := idx.IndexNewFiles(); err != nil {
+	// 	fmt.Fprintf(os.Stderr, "Warning: error indexing new files: %v\n", err)
+	// }
 
 	// Launch TUI
 	model := tui.New(b, database, idx)
