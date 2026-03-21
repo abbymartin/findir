@@ -29,7 +29,7 @@ func New(dbPath string) (*PythonBridge, error) {
 	scriptPath := filepath.Join(projectRoot, "python", "main.py")
 
 	cmd := exec.Command(pythonPath, scriptPath, dbPath)
-	cmd.Stderr = os.Stderr
+	cmd.Stderr =  nil // todo maybe move this to a log file
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

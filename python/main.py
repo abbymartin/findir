@@ -37,6 +37,10 @@ def handle_request(req: dict, db_conn) -> dict:
             database.store_embedding(db_conn, file_id, i, chunk_text, vec)
         return {"status": "ok", "chunks_indexed": len(chunks)}
 
+    elif action == "warmup":
+        embeddings.get_model()
+        return {"status": "ok"}
+
     elif action == "ping":
         return {"status": "ok"}
 

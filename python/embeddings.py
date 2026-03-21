@@ -10,9 +10,7 @@ def get_model():
     if _model is None:
         import sys
         from fastembed import TextEmbedding
-        sys.stderr.write("Loading embedding model...\n")
         _model = TextEmbedding(model_name=MODEL_NAME)
-        sys.stderr.write("Embedding model loaded.\n")
     return _model
 
 

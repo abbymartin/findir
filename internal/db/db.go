@@ -136,3 +136,38 @@ func (d *DB) FileIsIndexed(path string, hash string) (bool, error) {
 	}
 	return count > 0, nil
 }
+
+func (d *DB) FileIsIndexedByPath(path string) (bool, error) {
+	var count int
+	err := d.conn.QueryRow(
+		"SELECT COUNT(*) FROM indexed_files WHERE path = ?",
+		path,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (d *DB) InsertIndexedFile(directoryID int64, path string, size int64, modifiedAt time.Time) (int64, error) {
+	result, err := d.conn.Exec(
+		"INSERT INTO indexed_files (directory_id, path, file_hash, file_size, modified_at) VALUES (?, ?, '', ?, ?)",
+		directoryID, path, size, modifiedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (d *DB) GetTrackedDirectoryByPath(path string) (*TrackedDirectory, error) {
+	var dir TrackedDirectory
+	err := d.conn.QueryRow(
+		"SELECT id, path, added_at FROM tracked_directories WHERE path = ?",
+		path,
+	).Scan(&dir.ID, &dir.Path, &dir.AddedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &dir, nil
+}
