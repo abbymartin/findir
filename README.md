@@ -19,9 +19,9 @@ cd findir
 2. Set up Python environment  
 ```
 cd python
-python3 -m venv venv
-source venv/bin/activate 
-pip install fastembed onnxruntime
+python3 -m venv .venv
+source .venv/bin/activate 
+pip install fastembed
 cd ..
 ```
 3. Install Go dependencies  
