@@ -5,7 +5,7 @@ Findir is a terminal application for Linux that performs semantic search across 
 ## Setup
 
 ### Prerequisites
-  - Go (version tbd)
+  - Go 1.25+
   - Python 3.10+
   - poppler-utils for PDF parsing: `sudo apt install poppler-utils`
 
