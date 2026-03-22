@@ -16,7 +16,7 @@ Findir is a terminal application for Linux that performs semantic search across 
 git clone https://github.com/abbymartin/findir.git
 cd findir
 ```
-3. Set up Python environment  
+2. Set up Python environment  
 ```
 cd python
 python3 -m venv venv
@@ -24,11 +24,11 @@ source venv/bin/activate
 pip install fastembed onnxruntime
 cd ..
 ```
-5. Install Go dependencies  
+3. Install Go dependencies  
 ```
 go mod download
 ```
-7. Build the binaries  
+4. Build the binaries  
 ```
 go build -o ~/.local/bin/findir ./cmd/findir
 go build -o ~/.local/bin/watcher ./cmd/watcher
