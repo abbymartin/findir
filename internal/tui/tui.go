@@ -533,6 +533,13 @@ func (m Model) renderSearchResults(b *strings.Builder) {
 			b.WriteString("\n")
 
 			preview := r.ChunkText
+			if idx := strings.Index(preview, "\n"); idx != -1 {
+				if idx2 := strings.Index(preview[idx+1:], "\n"); idx2 != -1 {
+					if idx3 := strings.Index(preview[idx+1+idx2+1:], "\n"); idx3 != -1 {
+						preview = preview[:idx+1+idx2+1+idx3] + "..."
+					}
+				}
+			}
 			if len(preview) > 120 {
 				preview = preview[:120] + "..."
 			}
