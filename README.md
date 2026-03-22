@@ -13,7 +13,7 @@ Findir is a terminal application for Linux that performs semantic search across 
 
 1. Clone the repo  
 ```
-git clone https://github.com/abbymartin/Findir.git
+git clone https://github.com/abbymartin/findir.git
 cd findir
 ```
 3. Set up Python environment  
