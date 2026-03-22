@@ -5,28 +5,34 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"semantic-files/internal/bridge"
-	"semantic-files/internal/db"
-	"semantic-files/internal/indexer"
-	"semantic-files/internal/tui"
+	"findir/internal/bridge"
+	"findir/internal/db"
+	"findir/internal/indexer"
+	"findir/internal/tui"
 )
 
 func main() {
 	addDir := flag.String("add", "", "add a directory to track and index its files")
 	removeDir := flag.String("remove", "", "stop tracking a directory and remove its index")
 	listDirs := flag.Bool("list-dirs", false, "list all tracked directories and exit")
+	daemonStart := flag.Bool("daemon-start", false, "start the file watcher daemon")
+	daemonStop := flag.Bool("daemon-stop", false, "stop the file watcher daemon")
 	flag.Parse()
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("getting home directory: %v", err)
 	}
-	dataDir := filepath.Join(home, ".local", "share", "semantic-files")
-	dbPath := filepath.Join(dataDir, "semantic_files.db")
+	dataDir := filepath.Join(home, ".local", "share", "findir")
+	dbPath := filepath.Join(dataDir, "findir.db")
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		log.Fatalf("creating data directory: %v", err)
@@ -64,6 +70,45 @@ func main() {
 		return
 	}
 
+	journalPath := filepath.Join(dataDir, "journal.jsonl")
+	pidPath := filepath.Join(dataDir, "daemon.pid")
+
+	if *daemonStart {
+		exePath, _ := os.Executable()
+		watcherPath := filepath.Join(filepath.Dir(exePath), "watcher")
+		if _, err := os.Stat(watcherPath); err != nil {
+			log.Fatalf("watcher binary not found. Build it with: go build -o watcher ./cmd/watcher")
+		}
+
+		cmd := exec.Command(watcherPath, dbPath, journalPath)
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Fatalf("starting daemon: %v", err)
+		}
+		fmt.Printf("Daemon started. Use findir --daemon-stop to stop it\n")
+		return
+	}
+
+	if *daemonStop {
+		pidData, err := os.ReadFile(pidPath)
+		if err != nil {
+			log.Fatalf("daemon not running (no PID file)")
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(pidData)))
+		if err != nil {
+			log.Fatalf("invalid PID file")
+		}
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			log.Fatalf("process not found: %v", err)
+		}
+		if err := proc.Signal(syscall.SIGTERM); err != nil {
+			log.Fatalf("sending SIGTERM: %v", err)
+		}
+		fmt.Printf("Daemon (PID %d) stopped.\n", pid)
+		return
+	}
+
 	b, err := bridge.New(dbPath)
 	if err != nil {
 		log.Fatalf("starting python bridge: %v", err)
@@ -81,10 +126,12 @@ func main() {
 		return
 	}
 
-	// TODO Index any new files in tracked directories
-	// if err := idx.IndexNewFiles(); err != nil {
-	// 	fmt.Fprintf(os.Stderr, "Warning: error indexing new files: %v\n", err)
-	// }
+	// Process journal from daemon (re-index changed files)
+	if count, err := idx.ProcessJournal(journalPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: processing journal: %v\n", err)
+	} else if count > 0 {
+		fmt.Fprintf(os.Stderr, "Re-indexed %d files from daemon journal.\n", count)
+	}
 
 	// Launch TUI
 	model := tui.New(b, database, idx)
@@ -94,3 +141,4 @@ func main() {
 		os.Exit(1)
 	}
 }
+

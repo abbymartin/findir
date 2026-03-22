@@ -1,14 +1,17 @@
 package indexer
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
-	"semantic-files/internal/bridge"
-	"semantic-files/internal/db"
-	"semantic-files/internal/parsers"
+	"findir/internal/bridge"
+	"findir/internal/db"
+	"findir/internal/parsers"
 )
 
 type Indexer struct {
@@ -20,6 +23,7 @@ type Indexer struct {
 func New(database *db.DB, b *bridge.PythonBridge) *Indexer {
 	registry := parsers.NewRegistry(
 		&parsers.PlaintextParser{},
+		&parsers.MarkdownParser{},
 	)
 	return &Indexer{DB: database, Bridge: b, registry: registry}
 }
@@ -139,17 +143,76 @@ func (idx *Indexer) indexFile(path string, dirID int64, info os.FileInfo) error 
 	return nil
 }
 
-// todo rework this entirely!
-func (idx *Indexer) IndexNewFiles() error {
-	dirs, err := idx.DB.GetTrackedDirectories()
+type journalEntry struct {
+	Path      string `json:"path"`
+	Event     string `json:"event"`
+	Timestamp int64  `json:"timestamp"`
+}
+
+func (idx *Indexer) ProcessJournal(journalPath string) (int, error) {
+	f, err := os.OpenFile(journalPath, os.O_RDWR, 0644)
 	if err != nil {
-		return fmt.Errorf("getting tracked directories: %w", err)
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("opening journal: %w", err)
+	}
+	defer f.Close()
+
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return 0, fmt.Errorf("locking journal: %w", err)
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+
+	// Collect unique file paths
+	seen := make(map[string]bool)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var entry journalEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: skipping bad journal line: %s\n", line)
+			continue
+		}
+		seen[entry.Path] = true
 	}
 
-	for _, dir := range dirs {
-		if err := idx.ScanDirectory(dir.Path, dir.ID); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: error scanning %s: %v\n", dir.Path, err)
-		}
+	// Truncate the journal
+	if err := f.Truncate(0); err != nil {
+		return 0, fmt.Errorf("truncating journal: %w", err)
 	}
-	return nil
+
+	if len(seen) == 0 {
+		return 0, nil
+	}
+
+	// Re-index each file
+	count := 0
+	for filePath := range seen {
+		info, err := os.Stat(filePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: journal file gone: %s\n", filePath)
+			continue
+		}
+
+		dir, err := idx.DB.FindTrackedDirectoryForFile(filePath)
+		if err != nil || dir == nil {
+			fmt.Fprintf(os.Stderr, "Warning: no tracked directory for %s\n", filePath)
+			continue
+		}
+
+		// Delete old index entry (embeddings cascade via FK)
+		idx.DB.DeleteIndexedFileByPath(filePath)
+
+		if err := idx.indexFile(filePath, dir.ID, info); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: re-indexing %s: %v\n", filePath, err)
+			continue
+		}
+		count++
+	}
+
+	return count, nil
 }

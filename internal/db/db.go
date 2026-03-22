@@ -216,3 +216,26 @@ func (d *DB) GetTrackedDirectoryByPath(path string) (*TrackedDirectory, error) {
 	}
 	return &dir, nil
 }
+
+func (d *DB) DeleteIndexedFileByPath(path string) error {
+	_, err := d.conn.Exec("DELETE FROM indexed_files WHERE path = ?", path)
+	return err
+}
+
+func (d *DB) FindTrackedDirectoryForFile(filePath string) (*TrackedDirectory, error) {
+	dirs, err := d.GetTrackedDirectories()
+	if err != nil {
+		return nil, err
+	}
+	var best *TrackedDirectory
+	for _, dir := range dirs {
+		prefix := strings.TrimRight(dir.Path, "/") + "/"
+		if strings.HasPrefix(filePath, prefix) {
+			if best == nil || len(dir.Path) > len(best.Path) {
+				d := dir
+				best = &d
+			}
+		}
+	}
+	return best, nil
+}

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"semantic-files/internal/bridge"
-	"semantic-files/internal/db"
-	"semantic-files/internal/indexer"
+	"findir/internal/bridge"
+	"findir/internal/db"
+	"findir/internal/indexer"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -423,7 +423,7 @@ func (m Model) renderTrackedDirs(b *strings.Builder) {
 		b.WriteString("\n")
 	}
 	if len(dirs) > maxDisplay {
-		b.WriteString(statusStyle.Render(fmt.Sprintf("  ...and %d more. Run `semantic-files --list-dirs` to see all.", len(dirs)-maxDisplay)))
+		b.WriteString(statusStyle.Render(fmt.Sprintf("  ...and %d more. Run `findir --list-dirs` to see all.", len(dirs)-maxDisplay)))
 		b.WriteString("\n")
 	}
 	b.WriteString(statusStyle.Render("↑/↓: select • ctrl+d: remove"))
