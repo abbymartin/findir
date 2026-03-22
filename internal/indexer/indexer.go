@@ -17,7 +17,16 @@ import (
 type Indexer struct {
 	DB       *db.DB
 	Bridge   *bridge.PythonBridge
+	Log      func(string)
 	registry *parsers.Registry
+}
+
+func (idx *Indexer) log(msg string) {
+	if idx.Log != nil {
+		idx.Log(msg)
+	} else {
+		fmt.Fprintln(os.Stderr, msg)
+	}
 }
 
 func New(database *db.DB, b *bridge.PythonBridge) *Indexer {
@@ -64,7 +73,7 @@ func (idx *Indexer) AddAndIndex(dirPath string) error {
 		if err := idx.DB.RemoveTrackedDirectory(child.ID); err != nil {
 			return fmt.Errorf("removing child directory %s: %w", child.Path, err)
 		}
-		fmt.Fprintf(os.Stderr, "Removed child directory %s (now covered by %s)\n", child.Path, absPath)
+		idx.log(fmt.Sprintf("Removed child directory %s (now covered by %s)", child.Path, absPath))
 	}
 
 	dirID, err := idx.DB.AddTrackedDirectory(absPath)
@@ -143,7 +152,7 @@ func (idx *Indexer) indexFile(path string, dirID int64, info os.FileInfo) error 
 		return fmt.Errorf("python error: %s", errStr)
 	}
 
-	fmt.Fprintf(os.Stderr, "Indexed: %s (%d chunks)\n", path, len(chunks))
+	idx.log(fmt.Sprintf("Indexed: %s (%d chunks)", path, len(chunks)))
 	return nil
 }
 
@@ -178,7 +187,7 @@ func (idx *Indexer) ProcessJournal(journalPath string) (int, error) {
 		}
 		var entry journalEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: skipping bad journal line: %s\n", line)
+			idx.log(fmt.Sprintf("Warning: skipping bad journal line: %s", line))
 			continue
 		}
 		seen[entry.Path] = true
@@ -198,13 +207,13 @@ func (idx *Indexer) ProcessJournal(journalPath string) (int, error) {
 	for filePath := range seen {
 		info, err := os.Stat(filePath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: journal file gone: %s\n", filePath)
+			idx.log(fmt.Sprintf("Warning: journal file gone: %s", filePath))
 			continue
 		}
 
 		dir, err := idx.DB.FindTrackedDirectoryForFile(filePath)
 		if err != nil || dir == nil {
-			fmt.Fprintf(os.Stderr, "Warning: no tracked directory for %s\n", filePath)
+			idx.log(fmt.Sprintf("Warning: no tracked directory for %s", filePath))
 			continue
 		}
 
@@ -212,7 +221,7 @@ func (idx *Indexer) ProcessJournal(journalPath string) (int, error) {
 		idx.DB.DeleteIndexedFileByPath(filePath)
 
 		if err := idx.indexFile(filePath, dir.ID, info); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: re-indexing %s: %v\n", filePath, err)
+			idx.log(fmt.Sprintf("Warning: re-indexing %s: %v", filePath, err))
 			continue
 		}
 		count++

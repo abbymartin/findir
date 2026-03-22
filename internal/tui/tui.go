@@ -48,6 +48,10 @@ type removeDoneMsg struct {
 	err error
 }
 
+type indexLogMsg struct {
+	line string
+}
+
 type Model struct {
 	bridge      *bridge.PythonBridge
 	database    *db.DB
@@ -64,9 +68,13 @@ type Model struct {
 	trackedDirs []db.TrackedDirectory
 	selectedDir int
 	journalPath string
-	width       int
-	height      int
+	indexLog []string
+	program  *tea.Program
+	width    int
+	height   int
 }
+
+const maxLogLines = 5
 
 func New(b *bridge.PythonBridge, database *db.DB, idx *indexer.Indexer, journalPath string) Model {
 	si := textinput.New()
@@ -86,6 +94,13 @@ func New(b *bridge.PythonBridge, database *db.DB, idx *indexer.Indexer, journalP
 		searchInput: si,
 		dirInput:    di,
 		journalPath: journalPath,
+	}
+}
+
+func (m *Model) SetProgram(p *tea.Program) {
+	m.program = p
+	m.indexer.Log = func(line string) {
+		p.Send(indexLogMsg{line: line})
 	}
 }
 
@@ -131,6 +146,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.modelReady {
 				return m, nil
 			}
+			m.indexLog = nil
+			m.indexStatus = ""
 			if m.mode == searchView {
 				m.mode = addDirView
 				m.searchInput.Blur()
@@ -212,6 +229,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.indexStatus = "Directory removed."
 		}
 		return m, loadTrackedDirs(m.database)
+
+	case indexLogMsg:
+		m.indexLog = append(m.indexLog, msg.line)
+		if len(m.indexLog) > maxLogLines {
+			m.indexLog = m.indexLog[len(m.indexLog)-maxLogLines:]
+		}
+		return m, nil
 	}
 
 	if !m.modelReady {
@@ -244,10 +268,16 @@ func (m Model) handleRemoveDir() (tea.Model, tea.Cmd) {
 	}
 	dir := m.trackedDirs[m.selectedDir]
 	m.loading = true
+	m.indexLog = nil
 	m.indexStatus = fmt.Sprintf("Removing %s...", dir.Path)
 	database := m.database
+	p := m.program
 	return m, func() tea.Msg {
+		p.Send(indexLogMsg{line: fmt.Sprintf("Removing: %s", dir.Path)})
 		err := database.RemoveTrackedDirectory(dir.ID)
+		if err == nil {
+			p.Send(indexLogMsg{line: fmt.Sprintf("Removed: %s", dir.Path)})
+		}
 		return removeDoneMsg{err: err}
 	}
 }
@@ -258,6 +288,7 @@ func (m Model) handleAddDir() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.loading = true
+	m.indexLog = nil
 	m.indexStatus = fmt.Sprintf("Indexing %s...", dirPath)
 	idx := m.indexer
 	return m, func() tea.Msg {
@@ -397,13 +428,13 @@ func (m Model) View() string {
 
 	// Tab bar
 	searchTab := "Search"
-	addTab := "Add Directory"
+	addTab := "Tracked Directories"
 	if m.mode == searchView {
 		searchTab = tabActiveStyle.Render("[Search]")
-		addTab = tabInactiveStyle.Render(" Add Directory ")
+		addTab = tabInactiveStyle.Render(" Tracked Directories ")
 	} else {
 		searchTab = tabInactiveStyle.Render(" Search ")
-		addTab = tabActiveStyle.Render("[Add Directory]")
+		addTab = tabActiveStyle.Render("[Tracked Directories]")
 	}
 	b.WriteString(searchTab + "  " + addTab)
 	b.WriteString("\n\n")
@@ -420,7 +451,14 @@ func (m Model) View() string {
 		} else if m.indexStatus != "" {
 			b.WriteString(statusStyle.Render(m.indexStatus))
 		}
-		b.WriteString("\n\n")
+		if len(m.indexLog) > 0 {
+			b.WriteString("\n")
+			for _, line := range m.indexLog {
+				b.WriteString(dirItemStyle.Render(line))
+				b.WriteString("\n")
+			}
+		}
+		b.WriteString("\n")
 		m.renderTrackedDirs(&b)
 	}
 
