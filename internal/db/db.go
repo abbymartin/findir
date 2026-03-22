@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -169,6 +170,39 @@ func (d *DB) RemoveTrackedDirectory(id int64) error {
 		return fmt.Errorf("removing tracked directory: %w", err)
 	}
 	return nil
+}
+
+func (d *DB) GetChildTrackedDirectories(parentPath string) ([]TrackedDirectory, error) {
+	prefix := strings.TrimRight(parentPath, "/") + "/"
+	rows, err := d.conn.Query("SELECT id, path, added_at FROM tracked_directories WHERE path LIKE ?", prefix+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var dirs []TrackedDirectory
+	for rows.Next() {
+		var dir TrackedDirectory
+		if err := rows.Scan(&dir.ID, &dir.Path, &dir.AddedAt); err != nil {
+			return nil, err
+		}
+		dirs = append(dirs, dir)
+	}
+	return dirs, rows.Err()
+}
+
+func (d *DB) GetParentTrackedDirectory(childPath string) (*TrackedDirectory, error) {
+	dirs, err := d.GetTrackedDirectories()
+	if err != nil {
+		return nil, err
+	}
+	for _, dir := range dirs {
+		prefix := strings.TrimRight(dir.Path, "/") + "/"
+		if strings.HasPrefix(childPath, prefix) {
+			return &TrackedDirectory{ID: dir.ID, Path: dir.Path, AddedAt: dir.AddedAt}, nil
+		}
+	}
+	return nil, nil
 }
 
 func (d *DB) GetTrackedDirectoryByPath(path string) (*TrackedDirectory, error) {

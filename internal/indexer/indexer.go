@@ -38,6 +38,27 @@ func (idx *Indexer) AddAndIndex(dirPath string) error {
 		return fmt.Errorf("%s is not a directory", absPath)
 	}
 
+	// Reject if a parent directory is already tracked
+	parent, err := idx.DB.GetParentTrackedDirectory(absPath)
+	if err != nil {
+		return fmt.Errorf("checking parent directories: %w", err)
+	}
+	if parent != nil {
+		return fmt.Errorf("%s is already covered by tracked directory %s", absPath, parent.Path)
+	}
+
+	// Remove any child directories that will be covered by this parent
+	children, err := idx.DB.GetChildTrackedDirectories(absPath)
+	if err != nil {
+		return fmt.Errorf("checking child directories: %w", err)
+	}
+	for _, child := range children {
+		if err := idx.DB.RemoveTrackedDirectory(child.ID); err != nil {
+			return fmt.Errorf("removing child directory %s: %w", child.Path, err)
+		}
+		fmt.Fprintf(os.Stderr, "Removed child directory %s (now covered by %s)\n", child.Path, absPath)
+	}
+
 	dirID, err := idx.DB.AddTrackedDirectory(absPath)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -61,11 +82,7 @@ func (idx *Indexer) ScanDirectory(dirPath string, dirID int64) error {
 		}
 
 		if info.IsDir() {
-			if path == dirPath {
-				return nil // skip self to avoid infinite loop
-			}
-			// recursively add files from subfolders
-			return idx.AddAndIndex(path)
+			return nil // Walk recurses automatically; all files use parent dirID
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))

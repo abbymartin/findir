@@ -167,7 +167,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Delete selected directory on 'd' or Delete key in add-dir view
 		if m.mode == addDirView && !m.loading && len(m.trackedDirs) > 0 {
-			if msg.String() == "d" || msg.Type == tea.KeyDelete {
+			if msg.String() == "ctrl+d" || msg.Type == tea.KeyDelete {
 				return m.handleRemoveDir()
 			}
 		}
@@ -426,7 +426,7 @@ func (m Model) renderTrackedDirs(b *strings.Builder) {
 		b.WriteString(statusStyle.Render(fmt.Sprintf("  ...and %d more. Run `semantic-files --list-dirs` to see all.", len(dirs)-maxDisplay)))
 		b.WriteString("\n")
 	}
-	b.WriteString(statusStyle.Render("↑/↓: select • d: remove"))
+	b.WriteString(statusStyle.Render("↑/↓: select • ctrl+d: remove"))
 	b.WriteString("\n")
 }
 
